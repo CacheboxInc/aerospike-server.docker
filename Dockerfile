@@ -36,7 +36,9 @@ RUN pip install --trusted-host pypi.python.org -r /requirements.txt
 # Add the Aerospike configuration specific to this dockerfile
 ADD src /
 COPY entrypoint.sh /entrypoint.sh
-COPY aerospike.conf /modded_aero.conf
+COPY aerospike.conf /etc/aerospike/aerospike.conf
+COPY aerospike_multicast.conf /etc/aerospike/aerospike_multicast.conf
+COPY aerospike_mesh.conf /etc/aerospike/aerospike_mesh.conf
 COPY start.sh /start.sh
 COPY run.sh /run.sh
 
