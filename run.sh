@@ -2,8 +2,8 @@
 
 echo "ASD package run"
 
-OPTIONS=e:l:n:m:i:p:
-LONGOPTS=etcdip:,svc_label:,svc_idx:,mode:,ip:,port:
+OPTIONS=e:l:n:m:i:p:h:
+LONGOPTS=etcdip:,svc_label:,svc_idx:,mode:,ip:,port:,ha_port:
 
 ! PARSED=$(getopt --options=$OPTIONS --longoptions=$LONGOPTS --name "$0" -- "$@")
 eval set -- "$PARSED"
@@ -46,6 +46,12 @@ while true ; do
                   shift 2
                   ;;
 
+            -h|--ha_port)
+                  echo "Setting ha_port to [$2] !"
+                  HA_PORT=$2
+                  shift 2
+                  ;;
+
             --)
                   shift
                   break
@@ -57,6 +63,11 @@ while true ; do
                   ;;
       esac
 done
+if [ -z ${HA_PORT} ]
+	then
+	./start.sh $ETCDIP $SVCLABEL $SVCIDX $MODE $IP $PORT
+else
+	./start.sh $ETCDIP $SVCLABEL $SVCIDX $MODE $IP $PORT $HA_PORT
+fi
 
-./start.sh $ETCDIP $SVCLABEL $SVCIDX $MODE $IP $PORT
 tail -f /dev/null
