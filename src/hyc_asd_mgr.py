@@ -13,7 +13,10 @@ import os
 import time
 import subprocess
 import falcon
+import requests
+
 from threading import Lock, Thread
+from filelock import FileLock
 
 from ha_lib.python.ha_lib import *
 from utils import *
@@ -33,6 +36,13 @@ MESH_CONFIG_FILE       = "/etc/aerospike/aerospike_mesh.conf"
 MULTICAST_CONFIG_FILE  = "/etc/aerospike/aerospike_multicast.conf"
 MODDED_FILE            = "/etc/aerospike/modded.conf"
 FILE_IN_USE            = None
+
+LOCK_FILE = "/etc/aerospike/lock"
+
+headers = {'Content-type': 'application/json'}
+cert    = None
+h       = "http"
+
 
 class ComponentStop(object):
 
@@ -198,6 +208,186 @@ class UnRegisterUDF(object):
 
         resp.status = HTTP_OK
 
+def get_self_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(("8.8.8.8", 80))
+    ip = s.getsockname()[0]
+    s.close()
+    return ip
+
+def get_nodes_in_cluster():
+    cmd = "asadm -e 'show config cluster'"
+    p = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = p.communicate()
+    if p.returncode != 0:
+        #log.error("Failed to get nodes in cluster")
+        print("Failed to get nodes in cluster")
+        return -1
+
+    out  = out.strip()
+
+    for line in out.split("\n"):
+        if line.startswith("NODE"):
+            nodes = line.split()
+            nodes.remove(':') if ':' in nodes else None
+            nodes.remove('NODE') if 'NODE' in nodes else None
+            break
+    node_ips = []
+    for node in nodes:
+        node_ip = node.split(":")[0]
+        node_ips.append(node_ip)
+
+    self_ip = get_self_ip()
+    node_ips.remove(self_ip) if self_ip in node_ips else None
+
+    return node_ips
+
+def get_config_on_host(namespace, set_name):
+
+    # Sample output
+    #objects=519:tombstones=0:memory_data_bytes=0:truncate_lut=0:deleting=false:stop-writes-count=0:set-enable-xdr=use-default:disable-eviction=false;
+
+    cmd = "asinfo -v 'sets/%s/%s'" %(namespace, set_name)
+    p = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = p.communicate()
+    if p.returncode != 0:
+        log.error("Failed to get data for set: %s in ns: %s" %(set_name, namespace))
+        return -1
+
+    out  = out.strip()
+    subs = out.split(":")
+
+    for sub in subs:
+        if sub.startswith("stop-writes-count"):
+            cnt = sub.split("=")[1]
+            break
+
+    return cnt
+
+def set_config_on_host(namespace, set_name, vm_quota):
+
+    curr_cnt = get_config_on_host(namespace, set_name)
+
+    if curr_cnt == -1:
+        log.error("Failed to set config as get failed")
+        return -1
+
+    set_total_quota = int(curr_cnt) + vm_quota
+
+    cmd = "asinfo -v \"set-config:context=namespace;id=%s;set=%s;set-stop-writes-count=%s\"" %(namespace, set_name, set_total_quota)
+    p = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = p.communicate()
+    if p.returncode != 0:
+        log.error("Failed to get data for set: %s in ns: %s" %(set_name, namespace))
+        return -1
+
+    return 0
+
+def lock_and_set(vm_id, namespace, set_name, vm_quota):
+
+    lck_file = LOCK_FILE + "_" + namespace + "_" + set_name
+    with FileLock(lck_file):
+        log.debug("Locked for set_name: %s in ns: %s with cnt:%s") %(set_name, namespace, vm_quota)
+        rc = set_config_on_host(namespace, set_name, vm_quota)
+
+    log.debug("UnLocked for set_name: %s in ns: %s with cnt:%s") %(set_name, namespace, vm_quota)
+    return rc
+
+
+def update_cnt_other(host, data, vmid):
+
+    r = requests.post("%s://%s/stord_svc/v1.0/update_set_count/?vm-id=%s" %(h, host, vmid),
+                        data=json.dumps(data), headers=headers, cert=cert, verify=False)
+    return 0
+
+class UpdateSetCount(object):
+
+    def on_post(self, req, resp):
+
+        log.debug("In UpdateSetCount")
+
+        data = req.stream.read()
+        data = data.decode()
+
+        data_dict = load_data(data)
+        vm_id = req.get_param("vm_id")
+
+        rc = lock_and_set(vm_id, data_dict['namespace'], data_dict['set'], data_dict['vm_quota'])
+
+        if rc:
+            log.error("Failed to set config on self for vmid: %s" %s)
+            resp.status = HTTP_ERROR
+            return
+
+        '''
+        with FileLock(LOCK_FILE):
+            # First create threads
+            # each thread sends same rest to all nodes in cluster
+            # proceed for self
+            # check all have returned output
+            # release lock if error
+            # else return success
+        '''
+
+            '''
+            udf_file  = data_dict['udf_file']
+            log.debug("Register UDF file : %s" %udf_file)
+            udf_path = '%s/%s' %(UDF_DIR, udf_file)
+            log.debug("Register UDF path : %s" %udf_path)
+
+            if os.path.isfile(udf_path) == False:
+                log.debug("Register UDF file not present: %s" %udf_path)
+                resp.status = HTTP_ERROR
+                return
+
+            cmd = "aql -c \"register module '%s'\"" %udf_path
+            log.debug("Register UDF cmd is : %s" %cmd)
+            ret = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                shell=True)
+            out, err = ret.communicate()
+            status = ret.returncode
+            if status:
+                resp.status = HTTP_ERROR
+            '''
+        resp.status = HTTP_OK
+
+    def on_get(self, req, resp):
+
+        #TODO: return the status of update_cnt
+        #vm_id is required
+        log.debug("In GET UpdateSetCount")
+
+        data = req.stream.read()
+        data = data.decode()
+
+        vm_id = req.get_param("vm_id")
+        if vm_id is None:
+            err_msg = "No vmid given"
+            log.debug(err_msg)
+            resp.body   = json.dumps({"msg": err_msg})
+            resp.status = falcon.HTTP_400
+            return
+
+        '''
+        vm_iso_error_fpath = "%s/%s.error" %(ISO_REPO, vm_id)
+        vm_iso_fpath = "%s/%s.iso" %(ISO_REPO, vm_id)
+
+        if os.path.exists(vm_iso_fpath) is True:
+            st_msg = "ISO successfully created for VMID: %s"%(vm_id)
+            log.debug(st_msg)
+            resp.body = json.dumps({"status": 0, "status_msg": st_msg})
+        elif os.path.exists(vm_iso_error_fpath) is True:
+            st_msg = "Failed to create ISO for vmid: %s"%(vm_id)
+            log.debug(st_msg)
+            resp.body = json.dumps({"status": 2, "status_msg": st_msg})
+        else:
+            st_msg = "ISO creation is in progress for vmid: %s"%(vm_id)
+            log.debug(st_msg)
+            resp.body = json.dumps({"status": 1, "status_msg": st_msg})
+        '''
+        resp.status = falcon.HTTP_200
+        return
+
 #
 # ComponentMgr Class:
 # Creates an instance of halib with itself.
@@ -228,7 +418,9 @@ class ComponentMgr(Thread):
             self.start()
             log.debug("Waiting for asd service to come up")
             time.sleep(10)
+            os.system("touch %s" %LOCK_FILE)
             resp.status  = HTTP_OK
+            return
 
         else:
             #Nothing to do. Return Success
@@ -250,6 +442,7 @@ class ComponentMgr(Thread):
 services = {
 	'register_udf': RegisterUDF(),
 	'unregister_udf': UnRegisterUDF(),
+	'update_set_count' : UpdateSetCount(),
 	'component_stop' : ComponentStop(),
        }
 
