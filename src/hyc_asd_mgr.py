@@ -50,7 +50,7 @@ config_high = { "max-write-cache" : 536870912,
 
 config_low  = { "max-write-cache" : 268435456,
                 "post-write-queue" : 1024,
-                "memory_per_ns" : 4,
+                "memory_per_ns" : 2,
             }
 
 def is_service_up():
