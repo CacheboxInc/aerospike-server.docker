@@ -100,7 +100,7 @@ def create_mesh_config(mesh_addrs, mesh_port, memory, disks):
     if not memory:
         log.debug("Memory not set using default")
         memory = 10
-    mem_config = get_memory_config(memory)
+    mem_config = get_memory_config(int(memory))
 
     if not disks:
         log/debug("Disk not set using default")
@@ -165,7 +165,7 @@ def create_multicast_config(multi_addr, multi_port, memory, disks):
     if not memory:
         log.debug("Memory not set using default")
         memory = 10
-    mem_config = get_memory_config(memory)
+    mem_config = get_memory_config(int(memory))
 
     if not disks:
         log/debug("Disk not set using default")

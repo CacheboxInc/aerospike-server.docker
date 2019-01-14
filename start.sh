@@ -68,8 +68,8 @@ while true ; do
                   ;;
 
             -d|--disks)
-                  echo "Setting memory to [$2] !"
-                  MEMORY=$2
+                  echo "Setting disks to [$2] !"
+                  DISKS=$2
                   shift 2
                   ;;
 
