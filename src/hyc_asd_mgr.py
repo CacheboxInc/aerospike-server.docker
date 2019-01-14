@@ -69,15 +69,16 @@ def is_service_up():
 
 def get_memory_config(memory, disks):
 
+    log.debug("Total: %s" %memory)
     if memory >= 10 and memory < 20:
         config = config_low
 
-    elif memory >= 20 and memory < 32:
+    elif memory >= 20:
         config = config_high
 
     min_req    = disks * (config['max-write-cache'] >> 20) / 1024
-    min_req    = min_req + (config['post-write-queue'] >> 10)
-    avail_mem  = min_req - config['system']
+    min_req    = min_req + disks * (config['post-write-queue'] >> 10) + config['system']
+    avail_mem  = memory - min_req
 
     log.debug("min_req: %s avail_mem: %s" %(min_req, avail_mem))
     if avail_mem > 2:
