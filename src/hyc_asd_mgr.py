@@ -45,12 +45,14 @@ PWQ_MEMORY_MARKER = "PWQ_MEMORY"
 
 config_high = { "max-write-cache" : 536870912,
                 "post-write-queue" : 2048,
-                "memory_per_ns" : 12,
+                "memory_per_ns" : 10,
+                "system" : 4
             }
 
 config_low  = { "max-write-cache" : 268435456,
                 "post-write-queue" : 1024,
                 "memory_per_ns" : 2,
+                "system" : 1,
             }
 
 def is_service_up():
@@ -65,12 +67,22 @@ def is_service_up():
 
     return True
 
-def get_memory_config(memory):
+def get_memory_config(memory, disks):
 
-    if memory == 10:
+    if memory >= 10 and memory < 20:
         config = config_low
-    else:
+
+    elif memory >= 20 and memory < 32:
         config = config_high
+
+    min_req    = disks * (config['max-write-cache'] >> 20) / 1024
+    min_req    = min_req + (config['post-write-queue'] >> 10)
+    avail_mem  = min_req - config['system']
+
+    log.debug("min_req: %s avail_mem: %s" %(min_req, avail_mem))
+    if avail_mem > 2:
+        config['memory_per_ns'] = avail_mem / 2
+        log.debug("memory_per_ns: %s" %config['memory_per_ns'])
 
     return config
 
@@ -100,7 +112,7 @@ def create_mesh_config(mesh_addrs, mesh_port, memory, disks):
     if not memory:
         log.debug("Memory not set using default")
         memory = 10
-    mem_config = get_memory_config(int(memory))
+    mem_config = get_memory_config(int(memory), int(disks))
 
     if not disks:
         log/debug("Disk not set using default")
@@ -165,7 +177,7 @@ def create_multicast_config(multi_addr, multi_port, memory, disks):
     if not memory:
         log.debug("Memory not set using default")
         memory = 10
-    mem_config = get_memory_config(int(memory))
+    mem_config = get_memory_config(int(memory), int(disks))
 
     if not disks:
         log/debug("Disk not set using default")
