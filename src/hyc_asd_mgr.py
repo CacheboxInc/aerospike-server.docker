@@ -181,7 +181,7 @@ def create_multicast_config(multi_addr, multi_port, memory, disks):
     mem_config = get_memory_config(int(memory), int(disks))
 
     if not disks:
-        log/debug("Disk not set using default")
+        log.debug("Disk not set using default")
         disks = 2
     (clean_str, dirty_str) = get_disks_for_config(disks)
 
