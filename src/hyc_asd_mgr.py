@@ -14,8 +14,10 @@ import time
 import subprocess
 import falcon
 import requests
+import socket
 
 from threading import Lock, Thread
+from multiprocessing.dummy import Pool
 from filelock import FileLock
 
 from ha_lib.python.ha_lib import *
@@ -28,6 +30,7 @@ from utils import *
 COMPONENT_SERVICE = "aerospike"
 VERSION           = "v1.0"
 HTTP_OK           = falcon.HTTP_200
+HTTP_ACCEPTED     = falcon.HTTP_202
 HTTP_UNAVAILABLE  = falcon.HTTP_503
 HTTP_ERROR        = falcon.HTTP_400
 UDF_DIR           = "/etc/aerospike"
@@ -217,7 +220,8 @@ def get_self_ip():
 
 def get_nodes_in_cluster():
     cmd = "asadm -e 'show config cluster'"
-    p = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    p = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     out, err = p.communicate()
     if p.returncode != 0:
         #log.error("Failed to get nodes in cluster")
@@ -248,7 +252,8 @@ def get_config_on_host(namespace, set_name):
     #objects=519:tombstones=0:memory_data_bytes=0:truncate_lut=0:deleting=false:stop-writes-count=0:set-enable-xdr=use-default:disable-eviction=false;
 
     cmd = "asinfo -v 'sets/%s/%s'" %(namespace, set_name)
-    p = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    p = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     out, err = p.communicate()
     if p.returncode != 0:
         log.error("Failed to get data for set: %s in ns: %s" %(set_name, namespace))
@@ -257,6 +262,7 @@ def get_config_on_host(namespace, set_name):
     out  = out.strip()
     subs = out.split(":")
 
+    cnt  = 0
     for sub in subs:
         if sub.startswith("stop-writes-count"):
             cnt = sub.split("=")[1]
@@ -274,30 +280,84 @@ def set_config_on_host(namespace, set_name, vm_quota):
 
     set_total_quota = int(curr_cnt) + vm_quota
 
-    cmd = "asinfo -v \"set-config:context=namespace;id=%s;set=%s;set-stop-writes-count=%s\"" %(namespace, set_name, set_total_quota)
-    p = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    cmd = "asinfo -v \"set-config:context=namespace;id=%s;set=%s;set-stop-writes-count=%s\""\
+                 %(namespace, set_name, set_total_quota)
+    p = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     out, err = p.communicate()
     if p.returncode != 0:
         log.error("Failed to get data for set: %s in ns: %s" %(set_name, namespace))
         return -1
 
+    log.debug("Shri: set_config_on_host success")
+
     return 0
 
-def lock_and_set(vm_id, namespace, set_name, vm_quota):
+def update_cnt_other(host, data, vmid):
+    #TODO: Handle custom ports
+    r = requests.post("http://%s:8000/%s/v1.0/update_set_count/?vm-id=%s"
+                %(host, service_type, vmid),
+                    data=json.dumps(data),
+                    headers=headers,
+                    cert=cert,
+                    verify=False)
+    return 0
+
+def lock_and_set(vm_id, data, namespace, set_name, vm_quota):
+    '''
+    with FileLock(LOCK_FILE):
+        # First create threads
+        # each thread sends same rest to all nodes in cluster
+        # proceed for self
+        # check all have returned output
+        # release lock if error
+        # else return success
+    '''
+    log.debug("Shri:  lock_and_set enter")
+    node_ips = get_nodes_in_cluster()
 
     lck_file = LOCK_FILE + "_" + namespace + "_" + set_name
     with FileLock(lck_file):
-        log.debug("Locked for set_name: %s in ns: %s with cnt:%s") %(set_name, namespace, vm_quota)
-        rc = set_config_on_host(namespace, set_name, vm_quota)
+        log.debug("Locked for set_name: %s in ns: %s with cnt:%s"\
+                         %(set_name, namespace, vm_quota))
+        log.debug("1")
+        log.debug("is_master:%s" %data['is_master'])
+        log.debug("type is_master:%s" %type(data['is_master']))
+        if data['is_master'] and len(node_ips):
+            log.debug("2")
+            pool = Pool(len(node_ips))
+            futures = []
+            data['is_master'] = 0
 
-    log.debug("UnLocked for set_name: %s in ns: %s with cnt:%s") %(set_name, namespace, vm_quota)
+            for node in node_ips:
+                futures.append(pool.apply_async(update_cnt_other, (node, data)))
+
+            for future in futures:
+                if future.get() == HTTP_OK or future.get() == HTTP_ACCEPTED:
+                    continue
+                else:
+                    #TODO: Handle error
+                    return -1
+
+        log.debug("3")
+        rc = set_config_on_host(namespace, set_name, vm_quota)
+        log.debug("8")
+
+    log.debug("UnLocked for set_name: %s in ns: %s with cnt:%s" %(set_name, namespace, vm_quota))
     return rc
 
+def create_forks(vm_id, data, namespace, set_name, vm_quota):
+    try:
+        pid = os.fork()
+        if pid == 0:
+            ret = lock_and_set(vm_id, data, namespace, set_name, vm_quota)
+            log.debug("Return of lock_and_set: %s" %ret)
+            sys.exit(ret)
+    except Exception as e:
+        log.error("Update cnt failed err: %s" %e)
+        return 1
 
-def update_cnt_other(host, data, vmid):
-
-    r = requests.post("%s://%s/stord_svc/v1.0/update_set_count/?vm-id=%s" %(h, host, vmid),
-                        data=json.dumps(data), headers=headers, cert=cert, verify=False)
+    log.debug("Async set update started for vmid: %s" %vm_id)
     return 0
 
 class UpdateSetCount(object):
@@ -312,44 +372,26 @@ class UpdateSetCount(object):
         data_dict = load_data(data)
         vm_id = req.get_param("vm_id")
 
-        rc = lock_and_set(vm_id, data_dict['namespace'], data_dict['set'], data_dict['vm_quota'])
-
-        if rc:
-            log.error("Failed to set config on self for vmid: %s" %s)
+        if not data_dict['namespace'] or not data_dict['set']\
+                or not data_dict['vm_quota'] or not data_dict['is_master'] or not vm_id:
+            err_msg = "Invalid arguments provided"
+            log.error(err_msg)
+            resp.body   = json.dumps({"msg": err_msg})
             resp.status = HTTP_ERROR
             return
 
-        '''
-        with FileLock(LOCK_FILE):
-            # First create threads
-            # each thread sends same rest to all nodes in cluster
-            # proceed for self
-            # check all have returned output
-            # release lock if error
-            # else return success
-        '''
+        #TODO: Send requests to multiple nodes in parallel
+        rc = create_forks(vm_id, data_dict, data_dict['namespace'], data_dict['set'],
+                                data_dict['vm_quota'])
+        if rc:
+            err_msg = "Failed to set config for vmid: %s" %vm_id
+            log.error(err_msg)
+            resp.body   = json.dumps({"msg": err_msg})
+            resp.status = HTTP_ERROR
+            return
 
-            '''
-            udf_file  = data_dict['udf_file']
-            log.debug("Register UDF file : %s" %udf_file)
-            udf_path = '%s/%s' %(UDF_DIR, udf_file)
-            log.debug("Register UDF path : %s" %udf_path)
-
-            if os.path.isfile(udf_path) == False:
-                log.debug("Register UDF file not present: %s" %udf_path)
-                resp.status = HTTP_ERROR
-                return
-
-            cmd = "aql -c \"register module '%s'\"" %udf_path
-            log.debug("Register UDF cmd is : %s" %cmd)
-            ret = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                shell=True)
-            out, err = ret.communicate()
-            status = ret.returncode
-            if status:
-                resp.status = HTTP_ERROR
-            '''
-        resp.status = HTTP_OK
+        resp.status = HTTP_ACCEPTED
+        return
 
     def on_get(self, req, resp):
 
@@ -365,26 +407,9 @@ class UpdateSetCount(object):
             err_msg = "No vmid given"
             log.debug(err_msg)
             resp.body   = json.dumps({"msg": err_msg})
-            resp.status = falcon.HTTP_400
+            resp.status = HTTP_ERROR
             return
 
-        '''
-        vm_iso_error_fpath = "%s/%s.error" %(ISO_REPO, vm_id)
-        vm_iso_fpath = "%s/%s.iso" %(ISO_REPO, vm_id)
-
-        if os.path.exists(vm_iso_fpath) is True:
-            st_msg = "ISO successfully created for VMID: %s"%(vm_id)
-            log.debug(st_msg)
-            resp.body = json.dumps({"status": 0, "status_msg": st_msg})
-        elif os.path.exists(vm_iso_error_fpath) is True:
-            st_msg = "Failed to create ISO for vmid: %s"%(vm_id)
-            log.debug(st_msg)
-            resp.body = json.dumps({"status": 2, "status_msg": st_msg})
-        else:
-            st_msg = "ISO creation is in progress for vmid: %s"%(vm_id)
-            log.debug(st_msg)
-            resp.body = json.dumps({"status": 1, "status_msg": st_msg})
-        '''
         resp.status = falcon.HTTP_200
         return
 
