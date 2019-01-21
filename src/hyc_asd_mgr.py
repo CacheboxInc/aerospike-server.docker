@@ -221,11 +221,10 @@ def get_self_ip():
 def get_nodes_in_cluster():
     cmd = "asadm -e 'show config cluster'"
     p = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
     out, err = p.communicate()
     if p.returncode != 0:
-        #log.error("Failed to get nodes in cluster")
-        print("Failed to get nodes in cluster")
+        log.error("Failed to get nodes in cluster")
         return -1
 
     out  = out.strip()
@@ -253,7 +252,7 @@ def get_config_on_host(namespace, set_name):
 
     cmd = "asinfo -v 'sets/%s/%s'" %(namespace, set_name)
     p = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
     out, err = p.communicate()
     if p.returncode != 0:
         log.error("Failed to get data for set: %s in ns: %s" %(set_name, namespace))
@@ -283,7 +282,7 @@ def set_config_on_host(namespace, set_name, vm_quota):
     cmd = "asinfo -v \"set-config:context=namespace;id=%s;set=%s;set-stop-writes-count=%s\""\
                  %(namespace, set_name, set_total_quota)
     p = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
     out, err = p.communicate()
     if p.returncode != 0:
         log.error("Failed to get data for set: %s in ns: %s" %(set_name, namespace))
@@ -295,13 +294,15 @@ def set_config_on_host(namespace, set_name, vm_quota):
 
 def update_cnt_other(host, data, vmid):
     #TODO: Handle custom ports
-    r = requests.post("http://%s:8000/%s/v1.0/update_set_count/?vm-id=%s"
+    log.debug("\nhttp://%s:8000/%s/v1.0/update_set_count?vm_id=%s\n\n"  %(host, service_type, vmid))
+    r = requests.post("http://%s:8000/%s/v1.0/update_set_count?vm_id=%s"
                 %(host, service_type, vmid),
                     data=json.dumps(data),
                     headers=headers,
                     cert=cert,
                     verify=False)
-    return 0
+    log.debug(r)
+    return r.status_code
 
 def lock_and_set(vm_id, data, namespace, set_name, vm_quota):
     '''
@@ -330,10 +331,11 @@ def lock_and_set(vm_id, data, namespace, set_name, vm_quota):
             data['is_master'] = 0
 
             for node in node_ips:
-                futures.append(pool.apply_async(update_cnt_other, (node, data)))
+                futures.append(pool.apply_async(update_cnt_other, (node, data, vm_id)))
 
             for future in futures:
-                if future.get() == HTTP_OK or future.get() == HTTP_ACCEPTED:
+                #if future.get() == HTTP_OK or future.get() == HTTP_ACCEPTED:
+                if future.get() == 202 or future.get() == 200:
                     continue
                 else:
                     #TODO: Handle error
@@ -373,14 +375,14 @@ class UpdateSetCount(object):
         vm_id = req.get_param("vm_id")
 
         if not data_dict['namespace'] or not data_dict['set']\
-                or not data_dict['vm_quota'] or not data_dict['is_master'] or not vm_id:
+                or not data_dict['vm_quota'] or not 'is_master' in data_dict\
+                or not vm_id:
             err_msg = "Invalid arguments provided"
             log.error(err_msg)
             resp.body   = json.dumps({"msg": err_msg})
             resp.status = HTTP_ERROR
             return
 
-        #TODO: Send requests to multiple nodes in parallel
         rc = create_forks(vm_id, data_dict, data_dict['namespace'], data_dict['set'],
                                 data_dict['vm_quota'])
         if rc:
