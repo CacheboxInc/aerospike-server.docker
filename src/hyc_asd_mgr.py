@@ -15,6 +15,7 @@ import subprocess
 import falcon
 import requests
 import socket
+import traceback
 
 from threading import Lock, Thread
 from multiprocessing.dummy import Pool
@@ -305,27 +306,16 @@ def update_cnt_other(host, data, vmid):
     return r.status_code
 
 def lock_and_set(vm_id, data, namespace, set_name, vm_quota):
-    '''
-    with FileLock(LOCK_FILE):
-        # First create threads
-        # each thread sends same rest to all nodes in cluster
-        # proceed for self
-        # check all have returned output
-        # release lock if error
-        # else return success
-    '''
     log.debug("Shri:  lock_and_set enter")
     node_ips = get_nodes_in_cluster()
 
     lck_file = LOCK_FILE + "_" + namespace + "_" + set_name
-    with FileLock(lck_file):
+    f_lock   = FileLock(lck_file)
+
+    with f_lock.acquire(poll_intervall=1):
         log.debug("Locked for set_name: %s in ns: %s with cnt:%s"\
                          %(set_name, namespace, vm_quota))
-        log.debug("1")
-        log.debug("is_master:%s" %data['is_master'])
-        log.debug("type is_master:%s" %type(data['is_master']))
         if data['is_master'] and len(node_ips):
-            log.debug("2")
             pool = Pool(len(node_ips))
             futures = []
             data['is_master'] = 0
@@ -341,9 +331,8 @@ def lock_and_set(vm_id, data, namespace, set_name, vm_quota):
                     #TODO: Handle error
                     return -1
 
-        log.debug("3")
         rc = set_config_on_host(namespace, set_name, vm_quota)
-        log.debug("8")
+        f_lock.release()
 
     log.debug("UnLocked for set_name: %s in ns: %s with cnt:%s" %(set_name, namespace, vm_quota))
     return rc
@@ -356,6 +345,7 @@ def create_forks(vm_id, data, namespace, set_name, vm_quota):
             log.debug("Return of lock_and_set: %s" %ret)
             sys.exit(ret)
     except Exception as e:
+        traceback.print_exc()
         log.error("Update cnt failed err: %s" %e)
         return 1
 
