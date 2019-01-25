@@ -23,6 +23,7 @@ RUN \
   && dpkg -i aerospike/aerospike-tools-*.deb \
   && mkdir -p /var/log/aerospike/ \
   && mkdir -p /var/run/aerospike/ \
+  && mkdir -p /var/log/aerospike/pio \
   #&& rm -rf aerospike-server.tgz aerospike /var/lib/apt/lists/* \
   && rm -rf /opt/aerospike/lib/java \
   && dpkg -r wget ca-certificates \

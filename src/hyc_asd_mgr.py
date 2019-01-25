@@ -35,6 +35,7 @@ HTTP_ACCEPTED     = falcon.HTTP_202
 HTTP_UNAVAILABLE  = falcon.HTTP_503
 HTTP_ERROR        = falcon.HTTP_400
 UDF_DIR           = "/etc/aerospike"
+STATUS_DIR        = "/var/log/aerospike/pio"
 
 MESH_CONFIG_FILE       = "/etc/aerospike/aerospike_mesh.conf"
 MULTICAST_CONFIG_FILE  = "/etc/aerospike/aerospike_multicast.conf"
@@ -47,6 +48,7 @@ headers = {'Content-type': 'application/json'}
 cert    = None
 h       = "http"
 
+REQ_ID            = 0
 
 class ComponentStop(object):
 
@@ -305,7 +307,7 @@ def update_cnt_other(host, data, vmid):
     log.debug(r)
     return r.status_code
 
-def lock_and_set(vm_id, data, namespace, set_name, vm_quota):
+def lock_and_set(vm_id, req_id, data, namespace, set_name, vm_quota):
     log.debug("Shri:  lock_and_set enter")
     node_ips = get_nodes_in_cluster()
 
@@ -319,9 +321,11 @@ def lock_and_set(vm_id, data, namespace, set_name, vm_quota):
             pool = Pool(len(node_ips))
             futures = []
             data['is_master'] = 0
+            data['req_id']    = req_id
 
             for node in node_ips:
-                futures.append(pool.apply_async(update_cnt_other, (node, data, vm_id)))
+                futures.append(pool.apply_async(update_cnt_other,
+					(node, data, vm_id)))
 
             for future in futures:
                 #if future.get() == HTTP_OK or future.get() == HTTP_ACCEPTED:
@@ -337,12 +341,19 @@ def lock_and_set(vm_id, data, namespace, set_name, vm_quota):
     log.debug("UnLocked for set_name: %s in ns: %s with cnt:%s" %(set_name, namespace, vm_quota))
     return rc
 
-def create_forks(vm_id, data, namespace, set_name, vm_quota):
+def create_forks(vm_id, req_id, data, namespace, set_name, vm_quota):
     try:
         pid = os.fork()
         if pid == 0:
-            ret = lock_and_set(vm_id, data, namespace, set_name, vm_quota)
+            ret = lock_and_set(vm_id, req_id, data, namespace, set_name, vm_quota)
             log.debug("Return of lock_and_set: %s" %ret)
+
+            if ret:
+                status = "ERROR"
+            else:
+                status = "SUCCESS"
+
+            os.system("touch %s/%s_%s_%s" %(STATUS_DIR, req_id, vm_id, status))
             sys.exit(ret)
     except Exception as e:
         traceback.print_exc()
@@ -351,6 +362,51 @@ def create_forks(vm_id, data, namespace, set_name, vm_quota):
 
     log.debug("Async set update started for vmid: %s" %vm_id)
     return 0
+
+def get_update_cnt_status(vm_id, req_id, is_master):
+
+    log.debug("Received %s, %s, %s" %(type(vm_id), type(req_id), type(is_master)))
+    log.debug("Received %s, %s, %s" %((vm_id), (req_id), (is_master)))
+
+    node_ips    = get_nodes_in_cluster()
+
+    log.debug("Starting get_update_cnt_status")
+    if is_master and len(node_ips):
+        is_master = 0
+
+        for node in node_ips:
+            url = "http://%s:8000/%s/v1.0/update_set_count?vm_id=%s&req_id=%s"\
+                    "&is_master=%s" %(node, service_type, vm_id, req_id, is_master)
+            log.debug("Sending url: %s" %url)
+            r = requests.get(url)
+            if r.status_code != 200:
+                log.error("Sending rest failed for node:" %node)
+                return -1
+
+            resp = r.json()
+
+            #if r.json["status"] == -1:
+            if resp["status"] == -1:
+                log.error("Setting Update cnt failed for node:" %node)
+                return -1
+
+            #elif r.json["status"] == 1:
+            elif resp["status"] == 1:
+                log.debug("Setting Update cnt in progress for node:" %node)
+
+            log.debug("Status: %s from node: %s " %(r.status_code, node))
+
+    f_str = "%s/%s_%s_" %(STATUS_DIR, req_id, vm_id)
+
+    if os.path.exists(f_str + "SUCCESS"):
+        log.debug("get_update_cnt_status returning success :)")
+        return 0
+    elif os.path.exists(f_str + "ERROR"):
+        log.debug("get_update_cnt_status returning error :(")
+        return -1
+    else:
+        log.debug("get_update_cnt_status returning error :|")
+        return 1
 
 class UpdateSetCount(object):
 
@@ -362,7 +418,7 @@ class UpdateSetCount(object):
         data = data.decode()
 
         data_dict = load_data(data)
-        vm_id = req.get_param("vm_id")
+        vm_id     = req.get_param("vm_id")
 
         if not data_dict['namespace'] or not data_dict['set']\
                 or not data_dict['vm_quota'] or not 'is_master' in data_dict\
@@ -373,7 +429,9 @@ class UpdateSetCount(object):
             resp.status = HTTP_ERROR
             return
 
-        rc = create_forks(vm_id, data_dict, data_dict['namespace'], data_dict['set'],
+        global REQ_ID
+        REQ_ID += 1
+        rc = create_forks(vm_id, REQ_ID, data_dict, data_dict['namespace'], data_dict['set'],
                                 data_dict['vm_quota'])
         if rc:
             err_msg = "Failed to set config for vmid: %s" %vm_id
@@ -382,27 +440,37 @@ class UpdateSetCount(object):
             resp.status = HTTP_ERROR
             return
 
+        resp.body   = json.dumps({"req_id": REQ_ID})
         resp.status = HTTP_ACCEPTED
         return
 
     def on_get(self, req, resp):
 
-        #TODO: return the status of update_cnt
-        #vm_id is required
         log.debug("In GET UpdateSetCount")
 
-        data = req.stream.read()
-        data = data.decode()
+        vm_id     = int(req.get_param("vm_id"))
+        req_id    = int(req.get_param("req_id"))
+        is_master = int(req.get_param("is_master"))
 
-        vm_id = req.get_param("vm_id")
-        if vm_id is None:
-            err_msg = "No vmid given"
+        if vm_id is None or req_id is None or is_master is None:
+            err_msg = "Incorrent params given. Received vm_id:%s, req_id:%s,\
+                                    is_master:%s" %(vm_id, req_id, is_master)
             log.debug(err_msg)
             resp.body   = json.dumps({"msg": err_msg})
             resp.status = HTTP_ERROR
             return
 
-        resp.status = falcon.HTTP_200
+        rc = get_update_cnt_status(vm_id, req_id, is_master)
+
+        if rc == 1:
+            status_msg = "Update_cnt not yet complete"
+        elif rc == -1:
+            status_msg = "Not all nodes succeded to update_cnt"
+        elif rc == 0:
+            status_msg = "Successfully updated cnt everywhere"
+
+        resp.body   = json.dumps({"status": rc, "msg": status_msg})
+        resp.status = HTTP_OK
         return
 
 #
