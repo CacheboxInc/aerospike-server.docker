@@ -358,7 +358,8 @@ class ComponentMgr(Thread):
         while (is_service_up()):
             self.halib.set_health(True)
             log.debug("Updated health lease")
-            time.sleep(self.halib.get_health_lease()/ 3)
+            # CP-2801: set update lease thread frequency to 30 secs
+            time.sleep(self.halib.get_health_lease()/ 10)
 
         log.debug("asd health is down")
         self.started = False
