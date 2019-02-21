@@ -116,7 +116,7 @@ def create_mesh_config(mesh_addrs, mesh_port, memory, disks):
     mem_config = get_memory_config(int(memory), int(disks))
 
     if not disks:
-        log/debug("Disk not set using default")
+        log.debug("Disk not set using default")
         disks = 2
     (clean_str, dirty_str) = get_disks_for_config(disks)
 
@@ -324,15 +324,16 @@ class UnRegisterUDF(object):
 #
 class ComponentMgr(Thread):
     def __init__(self, etcd_server_ip, service_type, service_idx, VERSION,
-                   lease_interval = 120):
+                 lease_interval=300, heartbeat_frequency=30):
 
         Thread.__init__(self)
         self.setDaemon(True)
         self.started = False
         services["component_start"] = self
+        self.heartbeat_frequency = heartbeat_frequency
 
         self.halib = HALib(etcd_server_ip, VERSION, service_type, services,
-                                service_idx)
+                           service_idx, lease_interval)
         log.debug("HALib started")
 
     def on_post(self, req, resp, doc):
@@ -358,7 +359,8 @@ class ComponentMgr(Thread):
         while (is_service_up()):
             self.halib.set_health(True)
             log.debug("Updated health lease")
-            time.sleep(self.halib.get_health_lease()/ 3)
+            # CP-2801: set heartbeat frequency to 30 secs
+            time.sleep(self.heartbeat_frequency)
 
         log.debug("asd health is down")
         self.started = False
