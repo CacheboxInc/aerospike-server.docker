@@ -368,10 +368,10 @@ class ComponentMgr(Thread):
 
         if is_service_avaliable():
             st_msg = "Aerospike service started successfully"
-            resp.body = json.dumps({"status": 0, "status_msg": st_msg})
-        else:
-            st_msg = "Aerospike service starting"
             resp.body = json.dumps({"status": 1, "status_msg": st_msg})
+        else:
+            st_msg = "Aerospike service start in progress"
+            resp.body = json.dumps({"status": 0, "status_msg": st_msg})
 
         resp.status = HTTP_OK
 
