@@ -64,6 +64,10 @@ def is_service_up():
     status = ret.returncode
 
     if status:
+        log.error("is_service_up failed!!!")
+        log.error("out: %s" %out)
+        log.error("err: %s" %err)
+        log.error("status: %s" %status)
         return False
 
     return True
@@ -246,6 +250,10 @@ def is_service_avaliable():
     out, err = ret.communicate()
     status = ret.returncode
     if status:
+        log.error("is_service_available failed!!!")
+        log.error("out: %s" %out)
+        log.error("err: %s" %err)
+        log.error("status: %s" %status)
         return False
 
     return True
@@ -335,6 +343,7 @@ class ComponentMgr(Thread):
         Thread.__init__(self)
         self.setDaemon(True)
         self.started = False
+        self.failure_retry = 3
         services["component_start"] = self
 
         self.halib = HALib(etcd_server_ip, VERSION, service_type, services,
@@ -386,10 +395,29 @@ class ComponentMgr(Thread):
 
         self.started = True
         log.debug("Aerospike started and running!!")
-        while (is_service_up() and is_service_avaliable()):
+
+        lease_duration = self.halib.get_health_lease()
+        while (True):
+            if (not is_service_up() and self.failure_retry > 0):
+                log.error("service not up!! Retry cnt: %s" %self.failure_retry)
+                self.failure_retry -= self.failure_retry
+                time.sleep(lease_duration / 4)
+                continue
+
+            if (not is_service_avaliable() and self.failure_retry > 0):
+                log.error("service not available!! Retry cnt: %s" %self.failure_retry)
+                self.failure_retry -= self.failure_retry
+                time.sleep(lease_duration / 4)
+                continue
+
+            if (self.failure_retry == 0):
+                log.error("Failure_retry count exhausted!! Will not renew lease")
+                break
+
+            self.failure_retry = 3
             self.halib.set_health(True)
-            log.debug("Updated health lease")
-            time.sleep(self.halib.get_health_lease()/ 3)
+            log.info("Updated health lease")
+            time.sleep(lease_duration / 4)
 
         log.error("asd health is down")
         self.started = False
