@@ -352,6 +352,7 @@ class ComponentMgr(Thread):
 
     def on_post(self, req, resp, doc):
         if not self.started:
+            log.info("Starting service")
             ret = start_asd_service()
             if ret:
                 log.error("Failed to start asd service")
@@ -400,13 +401,13 @@ class ComponentMgr(Thread):
         while (True):
             if (not is_service_up() and self.failure_retry > 0):
                 log.error("service not up!! Retry cnt: %s" %self.failure_retry)
-                self.failure_retry -= self.failure_retry
+                self.failure_retry -= 1
                 time.sleep(lease_duration / 4)
                 continue
 
             if (not is_service_avaliable() and self.failure_retry > 0):
                 log.error("service not available!! Retry cnt: %s" %self.failure_retry)
-                self.failure_retry -= self.failure_retry
+                self.failure_retry -= 1
                 time.sleep(lease_duration / 4)
                 continue
 
