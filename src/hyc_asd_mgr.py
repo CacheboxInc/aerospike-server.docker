@@ -65,8 +65,8 @@ def is_service_up():
 
     if status:
         log.error("is_service_up failed!!!")
-        log.error("out: %s" %out)
-        log.error("err: %s" %err)
+        log.error("stdout: %s" %out)
+        log.error("stderr: %s" %err)
         log.error("status: %s" %status)
         return False
 
@@ -251,8 +251,8 @@ def is_service_avaliable():
     status = ret.returncode
     if status:
         log.error("is_service_available failed!!!")
-        log.error("out: %s" %out)
-        log.error("err: %s" %err)
+        log.error("stdout: %s" %out)
+        log.error("stderr: %s" %err)
         log.error("status: %s" %status)
         return False
 
