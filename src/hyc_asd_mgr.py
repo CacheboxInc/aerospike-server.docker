@@ -398,17 +398,18 @@ class ComponentMgr(Thread):
         log.debug("Aerospike started and running!!")
 
         lease_duration = self.halib.get_health_lease()
+        hb_update_duration = lease_duration / 4
         while (True):
             if (not is_service_up() and self.failure_retry > 0):
                 log.error("service not up!! Retry cnt: %s" %self.failure_retry)
                 self.failure_retry -= 1
-                time.sleep(lease_duration / 4)
+                time.sleep(hb_update_duration)
                 continue
 
             if (not is_service_avaliable() and self.failure_retry > 0):
                 log.error("service not available!! Retry cnt: %s" %self.failure_retry)
                 self.failure_retry -= 1
-                time.sleep(lease_duration / 4)
+                time.sleep(hb_update_duration)
                 continue
 
             if (self.failure_retry == 0):
@@ -418,7 +419,7 @@ class ComponentMgr(Thread):
             self.failure_retry = 3
             self.halib.set_health(True)
             log.info("Updated health lease")
-            time.sleep(lease_duration / 4)
+            time.sleep(hb_update_duration)
 
         log.error("asd health is down")
         self.started = False
