@@ -45,24 +45,24 @@ MWC_MEMORY_MARKER = "MWC_MEMORY"
 PWQ_MEMORY_MARKER = "PWQ_MEMORY"
 
 memory_config = {
-    "lite": {
+    "lite" : {
         "max-write-cache" : 128*1024*1024,
         "post-write-queue" : 1,
         "memory_per_ns": 3,
         "system" : 1,
-    }
-    "standard" = {
+    },
+    "standard": {
         "max-write-cache" : 256*1024*1024,
         "post-write-queue" : 256,
         "memory_per_ns": 4,
         "system" : 2,
-    }
-    "performance" = {
+    },
+    "performance": {
         "max-write-cache" : 512*1024*1024,
         "post-write-queue" : 1024,
         "memory_per_ns": 8,
         "system" : 4,
-    }
+    },
 }
 
 MIGRATION_PROFILES = tuple(memory_config.keys())
