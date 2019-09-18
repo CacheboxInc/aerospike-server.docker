@@ -30,6 +30,10 @@ HTTP_UNAVAILABLE  = falcon.HTTP_503
 HTTP_ERROR        = falcon.HTTP_400
 UDF_DIR           = "/etc/aerospike"
 
+MIGRATION_PROFILES = ("lite", "standard", "performance")
+DEFAULT_PROFILE = "lite"
+SELECTED_PROFILE = DEFAULT_PROFILE
+
 MESH_CONFIG_FILE       = "/etc/aerospike/aerospike_mesh.conf"
 MULTICAST_CONFIG_FILE  = "/etc/aerospike/aerospike_multicast.conf"
 MODDED_FILE            = "/etc/aerospike/modded.conf"
@@ -44,17 +48,26 @@ MEMORY_PER_NS_MARKER = "MEMORY_PER_NS"
 MWC_MEMORY_MARKER = "MWC_MEMORY"
 PWQ_MEMORY_MARKER = "PWQ_MEMORY"
 
-config_high = { "max-write-cache" : 536870912,
-                "post-write-queue" : 2048,
-                "memory_per_ns" : 10,
-                "system" : 4
-            }
-
-config_low  = { "max-write-cache" : 268435456,
-                "post-write-queue" : 256,
-                "memory_per_ns" : 2,
-                "system" : 1,
-            }
+memory_config = {
+    "lite": {
+        "max-write-cache" : 128*1024*1024,
+        "post-write-queue" : 1
+        "memory_per_ns": 3
+        "system" : 1
+    }
+    "standard" = {
+        "max-write-cache" : 256*1024*1024,
+        "post-write-queue" : 256
+        "memory_per_ns": 4
+        "system" : 2
+    }
+    "performance" = {
+        "max-write-cache" : 512*1024*1024,
+        "post-write-queue" : 1024
+        "memory_per_ns": 8
+        "system" : 4
+    }
+}
 
 def is_service_up():
     cmd = "pidof asd"
@@ -73,25 +86,7 @@ def is_service_up():
     return True
 
 def get_memory_config(memory, disks):
-
-    log.debug("Total: %s" %memory)
-    config = config_low
-    if memory >= 10 and memory < 20:
-        config = config_low
-
-    elif memory >= 20:
-        config = config_high
-
-    min_req    = disks * (config['max-write-cache'] >> 20) / 1024
-    min_req    = min_req + ((disks * config['post-write-queue']) >> 10) + config['system']
-    avail_mem  = memory - min_req
-
-    log.debug("min_req: %s avail_mem: %s" %(min_req, avail_mem))
-    if avail_mem > 2:
-        config['memory_per_ns'] = avail_mem / 2
-        log.debug("memory_per_ns: %s" %config['memory_per_ns'])
-
-    return config
+    return çopy.deepcopy(memory_config[SELECTED_PROFILE])
 
 def get_disks_for_config(no_disks):
     disks = ['sdb', 'sdc', 'sdd', 'sde', 'sdf', 'sdg', 'sdh', 'sdi', 'sdj', 'sdk']
@@ -351,6 +346,16 @@ class ComponentMgr(Thread):
         log.debug("HALib started")
 
     def on_post(self, req, resp, doc):
+        profile = req.get('migration_profile')
+        log.info("Passed migration config %s" % (profile))
+        if profile is None:
+            profile = DEFAULT_PROFILE
+        else:
+            profile = profile.lower()
+            profile = profile if profile in MIGRATION_PROFILES else DEFAULT_PROFILE
+        SELECTED_PROFILE = profile
+        log.info("Selected migration config %s" % (SELECTED_PROFILE))
+
         if not self.started:
             log.info("Starting service")
             ret = start_asd_service()
