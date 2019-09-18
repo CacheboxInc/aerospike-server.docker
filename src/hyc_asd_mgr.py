@@ -30,10 +30,6 @@ HTTP_UNAVAILABLE  = falcon.HTTP_503
 HTTP_ERROR        = falcon.HTTP_400
 UDF_DIR           = "/etc/aerospike"
 
-MIGRATION_PROFILES = ("lite", "standard", "performance")
-DEFAULT_PROFILE = "lite"
-SELECTED_PROFILE = DEFAULT_PROFILE
-
 MESH_CONFIG_FILE       = "/etc/aerospike/aerospike_mesh.conf"
 MULTICAST_CONFIG_FILE  = "/etc/aerospike/aerospike_multicast.conf"
 MODDED_FILE            = "/etc/aerospike/modded.conf"
@@ -51,23 +47,28 @@ PWQ_MEMORY_MARKER = "PWQ_MEMORY"
 memory_config = {
     "lite": {
         "max-write-cache" : 128*1024*1024,
-        "post-write-queue" : 1
-        "memory_per_ns": 3
-        "system" : 1
+        "post-write-queue" : 1,
+        "memory_per_ns": 3,
+        "system" : 1,
     }
     "standard" = {
         "max-write-cache" : 256*1024*1024,
-        "post-write-queue" : 256
-        "memory_per_ns": 4
-        "system" : 2
+        "post-write-queue" : 256,
+        "memory_per_ns": 4,
+        "system" : 2,
     }
     "performance" = {
         "max-write-cache" : 512*1024*1024,
-        "post-write-queue" : 1024
-        "memory_per_ns": 8
-        "system" : 4
+        "post-write-queue" : 1024,
+        "memory_per_ns": 8,
+        "system" : 4,
     }
 }
+
+MIGRATION_PROFILES = tuple(memory_config.keys())
+DEFAULT_PROFILE = "lite"
+SELECTED_PROFILE = DEFAULT_PROFILE
+
 
 def is_service_up():
     cmd = "pidof asd"
