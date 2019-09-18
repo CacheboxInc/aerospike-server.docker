@@ -13,6 +13,7 @@ import os
 import time
 import subprocess
 import falcon
+import copy
 from threading import Lock, Thread
 
 from ha_lib.python.ha_lib import *
@@ -87,7 +88,7 @@ def is_service_up():
     return True
 
 def get_memory_config(memory, disks):
-    return çopy.deepcopy(memory_config[SELECTED_PROFILE])
+    return çopy.copy(memory_config[SELECTED_PROFILE])
 
 def get_disks_for_config(no_disks):
     disks = ['sdb', 'sdc', 'sdd', 'sde', 'sdf', 'sdg', 'sdh', 'sdi', 'sdj', 'sdk']
