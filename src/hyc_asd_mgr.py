@@ -348,14 +348,8 @@ class ComponentMgr(Thread):
         log.debug("HALib started")
 
     def on_post(self, req, resp, doc):
-        profile = req.get('migration_profile')
-        log.info("Passed migration config %s" % (profile))
-        if profile is None:
-            profile = DEFAULT_PROFILE
-        else:
-            profile = profile.lower()
-            profile = profile if profile in MIGRATION_PROFILES else DEFAULT_PROFILE
-        SELECTED_PROFILE = profile
+        profile = req.get('migration_profile', DEFAULT_PROFILE).lower()
+        SELECTED_PROFILE = profile if profile in MIGRATION_PROFILES else DEFAULT_PROFILE
         log.info("Selected migration config %s" % (SELECTED_PROFILE))
 
         if not self.started:
