@@ -87,7 +87,7 @@ def is_service_up():
 
     return True
 
-def get_memory_config(memory, disks):
+def get_memory_config(unused):
     return çopy.copy(memory_config[SELECTED_PROFILE])
 
 def get_disks_for_config(no_disks):
@@ -116,7 +116,7 @@ def create_mesh_config(mesh_addrs, mesh_port, memory, disks):
     if not memory:
         log.debug("Memory not set using default")
         memory = 10
-    mem_config = get_memory_config(int(memory), int(disks))
+    mem_config = get_memory_config(int(memory))
 
     if not disks:
         log/debug("Disk not set using default")
@@ -181,7 +181,7 @@ def create_multicast_config(multi_addr, multi_port, memory, disks):
     if not memory:
         log.debug("Memory not set using default")
         memory = 10
-    mem_config = get_memory_config(int(memory), int(disks))
+    mem_config = get_memory_config(int(memory))
 
     if not disks:
         log.debug("Disk not set using default")
@@ -348,10 +348,6 @@ class ComponentMgr(Thread):
         log.debug("HALib started")
 
     def on_post(self, req, resp, doc):
-        profile = req.get('migration_profile', DEFAULT_PROFILE).lower()
-        SELECTED_PROFILE = profile if profile in MIGRATION_PROFILES else DEFAULT_PROFILE
-        log.info("Selected migration config %s" % (SELECTED_PROFILE))
-
         if not self.started:
             log.info("Starting service")
             ret = start_asd_service()
@@ -451,6 +447,7 @@ ip_addr        = None
 port_to_use    = None
 memory         = None
 disks          = None
+profile        = DEFAULT_PROFILE
 
 for arg in sys.argv:
     if arg.startswith("etcdip"):
@@ -485,6 +482,13 @@ for arg in sys.argv:
         disks = arg.split("=")[1]
         continue
 
+    elif arg.startswith("migration_profile"):
+        profile = arg.split("=")[1].lower()
+        continue
+
+SELECTED_PROFILE = profile if profile in MIGRATION_PROFILES else DEFAULT_PROFILE
+log.info("Selected migration config %s" % (SELECTED_PROFILE))
+
 if mode != '':
     FILE_IN_USE = MODDED_FILE
     if mode == 'mesh':
@@ -499,7 +503,7 @@ if etcd_server_ip == '' and service_type == '' and service_idx == '':
     service_idx    = 1
 
 print (etcd_server_ip, service_type, service_idx, mode, ip_addr, port_to_use,
-        memory, disks)
+        memory, disks, SELECTED_PROFILE)
 
 # Creating AsdManager instance
 component_mgr  = ComponentMgr(etcd_server_ip, service_type, service_idx, VERSION)
