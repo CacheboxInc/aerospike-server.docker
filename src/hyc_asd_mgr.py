@@ -88,7 +88,7 @@ def is_service_up():
     return True
 
 def get_memory_config(unused):
-    return çopy.copy(memory_config[SELECTED_PROFILE])
+    return copy.copy(memory_config[SELECTED_PROFILE])
 
 def get_disks_for_config(no_disks):
     disks = ['sdb', 'sdc', 'sdd', 'sde', 'sdf', 'sdg', 'sdh', 'sdi', 'sdj', 'sdk']
