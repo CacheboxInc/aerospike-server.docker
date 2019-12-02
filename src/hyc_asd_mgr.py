@@ -404,6 +404,9 @@ class ComponentMgr(Thread):
             time.sleep(10)
             st = is_service_avaliable()
 
+        global stop_threads
+        stop_threads = False
+
         self.started = True
         log.debug("Aerospike started and running!!")
 
@@ -426,6 +429,10 @@ class ComponentMgr(Thread):
                 log.error("Failure_retry count exhausted!! Will not renew lease")
                 break
 
+            if stop_threads:
+                log.debug("Component stop received. Stopping lease update")
+                break
+
             self.failure_retry = 3
             self.halib.set_health(True)
             log.info("Updated health lease")
@@ -442,6 +449,31 @@ class ComponentStop(object):
     def on_get(self, req, resp):
         resp.status = HTTP_OK
 
+    def on_post(self, req, resp):
+        log.debug("Received component stop call")
+
+        log.debug("Stopping heartbeat thread")
+        #self.started = False
+        global stop_threads
+        stop_threads = True
+
+        log.debug("Stopping aerospike service")
+        cmd = "pidof asd"
+        ret = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                shell=True)
+        out, err = ret.communicate()
+        status = ret.returncode
+
+        if status:
+            log.error("Failed to stop service")
+            resp.status = HTTP_OK
+
+        pid = out.strip()
+        cmd = "kill -15 %s" %pid
+        os.system(cmd)
+
+        #exit gracefully
+        resp.status = HTTP_OK
 
 services = {
 	'register_udf': RegisterUDF(),
