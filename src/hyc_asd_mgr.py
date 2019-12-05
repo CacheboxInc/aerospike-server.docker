@@ -453,7 +453,6 @@ class ComponentStop(object):
         log.debug("Received component stop call")
 
         log.debug("Stopping heartbeat thread")
-        #self.started = False
         global stop_threads
         stop_threads = True
 
@@ -472,8 +471,8 @@ class ComponentStop(object):
         cmd = "kill -15 %s" %pid
         os.system(cmd)
 
-        #exit gracefully
         resp.status = HTTP_OK
+        log.debug("Stopped everything")
 
 services = {
 	'register_udf': RegisterUDF(),
