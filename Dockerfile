@@ -4,18 +4,18 @@
 # http://github.com/aerospike/aerospike-server.docker
 #
 
-FROM ubuntu:xenial
 
-ENV AEROSPIKE_VERSION 4.2.0.10
-ENV AEROSPIKE_SHA256 a5135bba336f3333f0a96582bc748c480c84ff378b496e5a3afbcfbd96bb14a3
+FROM debian:stretch-slim
 
+ENV AEROSPIKE_VERSION 4.7.0.5
+ENV AEROSPIKE_SHA256 6d16d914823c4b55b5b8ce61c5056be45cf366b8502d12fcb54c48882db502c2
 
 # Install Aerospike Server and Tools
 
 RUN \
   apt-get update -y \
-  && apt-get install -y wget python python-argparse python-bcrypt python-openssl logrotate net-tools iproute2 iputils-ping gettext-base\
-  && wget "https://www.aerospike.com/artifacts/aerospike-server-community/${AEROSPIKE_VERSION}/aerospike-server-community-${AEROSPIKE_VERSION}-ubuntu16.04.tgz" -O aerospike-server.tgz \
+  && apt-get install -y wget python lua5.2 gettext-base python-argparse python-bcrypt python-openssl logrotate net-tools iproute2 iputils-ping gettext-base\
+  && wget "https://www.aerospike.com/artifacts/aerospike-server-community/${AEROSPIKE_VERSION}/aerospike-server-community-${AEROSPIKE_VERSION}-debian9.tgz" -O aerospike-server.tgz \
   && echo "$AEROSPIKE_SHA256 *aerospike-server.tgz" | sha256sum -c - \
   && mkdir aerospike \
   && tar xzf aerospike-server.tgz --strip-components=1 -C aerospike \
