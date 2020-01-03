@@ -28,7 +28,9 @@ RUN \
   && dpkg -r wget ca-certificates \
   && dpkg --purge wget ca-certificates \
   && apt-get purge -y \
-  && apt update;apt upgrade -y;apt autoremove -y
+  && apt update \
+  && apt upgrade -y \
+  && apt autoremove -y
 
 RUN apt-get update -y && apt-get install python-pip -y
 RUN pip install --upgrade pip
