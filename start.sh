@@ -92,4 +92,4 @@ while true ; do
       esac
 done
 
-gunicorn -b 0.0.0.0:$HA_PORT --certfile=/etc/certs/server_certificate.pem --keyfile=/etc/certs/server_key.pem hyc_asd_mgr:app etcdip=$ETCDIP svc_label=$SVCLABEL svc_idx=$SVCIDX mode=$MODE ip=$IP port=$PORT memory=$MEMORY disks=$DISKS migration_profile=$MIGRATION_PROFILE
+gunicorn -b 0.0.0.0:$HA_PORT --timeout 300 --access-logfile /var/log/asdmgr_gunicorn_access.log --log-file /var/log/asdmgr_gunicorn.log --certfile=/etc/certs/server_certificate.pem --keyfile=/etc/certs/server_key.pem hyc_asd_mgr:app etcdip=$ETCDIP svc_label=$SVCLABEL svc_idx=$SVCIDX mode=$MODE ip=$IP port=$PORT memory=$MEMORY disks=$DISKS migration_profile=$MIGRATION_PROFILE
