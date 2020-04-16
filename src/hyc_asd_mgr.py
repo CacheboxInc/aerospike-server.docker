@@ -414,6 +414,7 @@ class ComponentMgr(Thread):
                 log.error("service not up!! Retry cnt: %s" %self.failure_retry)
                 self.failure_retry -= 1
                 time.sleep(hb_update_duration)
+                self.halib.set_health(False)
                 continue
 
             if (not is_service_avaliable() and self.failure_retry > 0):
