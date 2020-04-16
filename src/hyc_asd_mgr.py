@@ -404,7 +404,7 @@ class ComponentMgr(Thread):
         while not st:
             log.debug("Waiting for asd service to come up")
             time.sleep(10)
-            self.halib.set_health(False)
+            self.halib.set_health(True)
             st = is_service_avaliable()
 
         self.started = True
@@ -415,7 +415,7 @@ class ComponentMgr(Thread):
                 log.error("service not up!! Retry cnt: %s" %self.failure_retry)
                 self.failure_retry -= 1
                 time.sleep(hb_update_duration)
-                self.halib.set_health(False)
+                self.halib.set_health(True)
                 continue
 
             if (not is_service_avaliable() and self.failure_retry > 0):
