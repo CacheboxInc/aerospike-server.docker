@@ -399,16 +399,17 @@ class ComponentMgr(Thread):
     def run(self):
         log.debug("Starting hb thread")
         st = is_service_avaliable()
+        lease_duration = self.halib.get_health_lease()
+        hb_update_duration = lease_duration / 4
         while not st:
             log.debug("Waiting for asd service to come up")
             time.sleep(10)
+            self.halib.set_health(False)
             st = is_service_avaliable()
 
         self.started = True
         log.debug("Aerospike started and running!!")
 
-        lease_duration = self.halib.get_health_lease()
-        hb_update_duration = lease_duration / 4
         while (True):
             if (not is_service_up() and self.failure_retry > 0):
                 log.error("service not up!! Retry cnt: %s" %self.failure_retry)
