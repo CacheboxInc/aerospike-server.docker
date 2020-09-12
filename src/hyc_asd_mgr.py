@@ -94,11 +94,53 @@ def is_service_up():
 def get_memory_config(unused):
     return copy.copy(memory_config[SELECTED_PROFILE])
 
+
+def get_unmounted_disks():
+
+    cmd = "lsblk -o kname,mountpoint,type | tail -n +2"
+    ret = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            shell=True)
+    out, err = ret.communicate()
+    status = ret.returncode
+
+    lsblk_lines = out.strip().split("\n")
+    disk_lines = [line for line in lsblk_lines if "disk" in line]
+    lines = [line for line in disk_lines if len(line.split()) <= 2]
+
+    all_disks = []
+    for line in lines:
+        disk = line.split()[0]
+        all_disks.append(disk)
+
+    log.info("detected unmounted disks in host: %s" %all_disks)
+
+    mounted_lines = [line for line in lsblk_lines if len(line.split()) > 2]
+
+    free_disks = []
+    for disk in all_disks:
+        found = False
+        for line in mounted_lines:
+            if disk in line:
+                found = True
+                break
+        if not found:
+            free_disks.append(disk)
+
+    log.info("detected usable disks for aerospike to use: %s" %free_disks)
+    return free_disks
+
 def get_disks_for_config(no_disks):
-    disks = ['sdc', 'sdd', 'sde', 'sdf', 'sdg', 'sdh', 'sdi', 'sdj', 'sdk', 'sdl']
+
+    disks = get_unmounted_disks()
     dev_str = "\t\tdevice /dev/"
 
     no_disks = int(no_disks)
+
+    if no_disks > len(disks):
+        log.error("Number of disks in docker host: %s are less than required"
+                    %(len(disks), no_disks))
+        log.error("Please investigate the config specified")
+        return ("", "")
 
     disks_to_use = disks[:no_disks]
     clean = disks_to_use[:(no_disks/2)]
@@ -126,6 +168,9 @@ def create_mesh_config(mesh_addrs, mesh_port, memory, disks):
         log/debug("Disk not set using default")
         disks = 2
     (clean_str, dirty_str) = get_disks_for_config(disks)
+
+    if clean_str == "" or dirty_str == "":
+        return -1
 
     with open(MESH_CONFIG_FILE, 'r') as input_file, open(MODDED_FILE, 'w+') as output_file:
         filedata = input_file.readlines()
@@ -184,7 +229,7 @@ def create_mesh_config(mesh_addrs, mesh_port, memory, disks):
                 continue
 
     log.debug("Mesh config created")
-    return
+    return 0
 
 def create_multicast_config(multi_addr, multi_port, memory, disks):
     if not memory:
@@ -196,6 +241,9 @@ def create_multicast_config(multi_addr, multi_port, memory, disks):
         log.debug("Disk not set using default")
         disks = 2
     (clean_str, dirty_str) = get_disks_for_config(disks)
+
+    if clean_str == "" or dirty_str == "":
+        return -1
 
     with open(MULTICAST_CONFIG_FILE, 'r') as input_file, open(MODDED_FILE, 'w+') as output_file:
         filedata = input_file.readlines()
@@ -242,7 +290,7 @@ def create_multicast_config(multi_addr, multi_port, memory, disks):
                 continue
 
     log.debug("Multicast config created")
-    return
+    return 0
 
 def start_asd_service():
     if FILE_IN_USE:
@@ -507,10 +555,16 @@ log.info("Selected migration config %s" % (SELECTED_PROFILE))
 if mode != '':
     FILE_IN_USE = MODDED_FILE
     if mode == 'mesh':
-        create_mesh_config(ip_addr, port_to_use, memory, disks)
+        rc = create_mesh_config(ip_addr, port_to_use, memory, disks)
+        if rc:
+            log.error("Failed to create mesh config")
+            sys.exit(1)
 
     elif mode == 'multicast':
-        create_multicast_config(ip_addr, port_to_use, memory, disks)
+        rc = create_multicast_config(ip_addr, port_to_use, memory, disks)
+        if rc:
+            log.error("Failed to create multicast config")
+            sys.exit(1)
 
 if etcd_server_ip == '' and service_type == '' and service_idx == '':
     etcd_server_ip = "127.0.0.1"
